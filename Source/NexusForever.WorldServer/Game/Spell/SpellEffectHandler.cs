@@ -25,12 +25,15 @@ namespace NexusForever.WorldServer.Game.Spell
         [SpellEffectHandler(SpellEffectType.Proxy)]
         private void HandleEffectProxy(UnitEntity target, SpellTargetInfo.SpellTargetEffectInfo info)
         {
-            target.CastSpell(info.Entry.DataBits00, new SpellParameters
-            {
-                ParentSpellInfo        = parameters.SpellInfo,
-                RootSpellInfo          = parameters.RootSpellInfo,
-                UserInitiatedSpellCast = false
-            });
+            // Some Proxies can be triggered only a certain amount of times per cast, by any target, and we evaluate all targets at once to apply Proxy effects.
+            // This checks that value to ensure we've not exceeded the unique number of times this can fire.
+            // A good example of this is for the Esper Ability Telekinetic Strike, it has a Proxy that grants Psi point when it hits an enemy.
+            // However, Esper's can only generate a maximum of 1 Psi Point per cast. This tracks that value that seems to indicate it's a 1-time effect per cast.
+            if (effectTriggerCount.TryGetValue(info.Entry.Id, out uint count))
+                if (count >= info.Entry.DataBits04)
+                    return;
+
+            proxies.Add(new Proxy(target, info.Entry, this, parameters));
         }
 
         [SpellEffectHandler(SpellEffectType.Disguise)]
