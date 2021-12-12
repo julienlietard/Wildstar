@@ -20,8 +20,7 @@ namespace NexusForever.WorldServer.Game.Spell
         public Vector3 Rotation { get; private set; }
         public TelegraphDamageEntry TelegraphDamage { get; }
 
-        private float casterHitRadius = 0f;
-        //private bool npcsSpawned = false;
+        private float casterHitRadius => Caster.HitRadius * 0.5f;
 
         public Telegraph(TelegraphDamageEntry telegraphDamageEntry, UnitEntity caster, Vector3 position, Vector3 rotation)
         {
@@ -29,26 +28,16 @@ namespace NexusForever.WorldServer.Game.Spell
             Caster = caster;
             Position = position;
             Rotation = rotation;
-            casterHitRadius = Caster.HitRadius * 0.5f;
 
             ApplyPositionOffsets();
             ApplyRotationOffsets();
-
-            //log.Info($"Telegraph {TelegraphDamage.Id} Position is {Position.X}, {Position.Z}");
-            //log.Info($"Telegraph {TelegraphDamage.Id} Rotation is {Rotation.X} ({Rotation.X.ToDegrees()}°) (Entry has {TelegraphDamage.RotationDegrees})");
-
-            //if ((DamageShape)TelegraphDamage.DamageShapeEnum == DamageShape.Cone || (DamageShape)TelegraphDamage.DamageShapeEnum == DamageShape.LongCone)
-            //{
-            //    Caster.Map.EnqueueAdd(new Simple(16718u), Position.GetPointForTelegraph(Rotation.X + MathF.PI / 2, TelegraphDamage.Param00 - (Caster.HitRadius * 0.5f)));
-            //    Vector3 endPos = Position.GetPointForTelegraph(Rotation.X + MathF.PI / 2, TelegraphDamage.Param01 + (Caster.HitRadius * 0.5f));
-            //    endPos.Y = Caster.Map.GetTerrainHeight(endPos.X, endPos.Z);
-            //    Caster.Map.EnqueueAdd(new Simple(16718u), endPos);
-            //}
         }
 
         private void ApplyPositionOffsets()
         {
-            if (TelegraphDamage.ZPositionOffset == 0u && TelegraphDamage.XPositionOffset == 0u && TelegraphDamage.YPositionOffset == 0u)
+            if (TelegraphDamage.ZPositionOffset == 0u
+                && TelegraphDamage.XPositionOffset == 0u
+                && TelegraphDamage.YPositionOffset == 0u)
                 return;
 
             Vector3 startingPosition = Position;
@@ -75,9 +64,6 @@ namespace NexusForever.WorldServer.Game.Spell
             Rotation = new Vector3(rotationRadians, Rotation.Y, Rotation.Z);
         }
 
-        /// <summary>
-        /// Returns any <see cref="UnitEntity"/> inside the <see cref="Telegraph"/>.
-        /// </summary>
         public IEnumerable<UnitEntity> GetTargets(Spell spell)
         {
             Caster.Map.Search(Position, GridSearchSize(), new SearchCheckTelegraph(this, Caster), out List<GridEntity> targets);
@@ -122,9 +108,10 @@ namespace NexusForever.WorldServer.Game.Spell
             switch ((DamageShape)TelegraphDamage.DamageShapeEnum)
             {
                 case DamageShape.Circle:
-                    float telegraphRange = TelegraphDamage.Param00;
-
-                    return Vector2.Distance(new Vector2(Position.X, Position.Z), new Vector2(position.X, position.Z)) <= telegraphRange + hitRadius;
+                    {
+                        float telegraphRange = TelegraphDamage.Param00;
+                        return Vector2.Distance(new Vector2(Position.X, Position.Z), new Vector2(position.X, position.Z)) <= telegraphRange + hitRadius;
+                    }
                 case DamageShape.Cone:
                 case DamageShape.LongCone:
                     {
@@ -166,15 +153,6 @@ namespace NexusForever.WorldServer.Game.Spell
                         topRight = Vector3.Add(RotatePoint(topRight, Rotation.X), Position);
 
                         Vector3[] points = new Vector3[] { bottomLeft, topLeft, topRight, bottomRight };
-
-                        //if (!npcsSpawned)
-                        //{
-                        //    foreach (Vector3 point in points)
-                        //        Caster.Map.EnqueueAdd(new Simple(16718u), point);
-
-                        //    npcsSpawned = true;
-                        //}
-
                         return IsHitInsidePolygon(points, position, hitRadius);
                     }
                 case DamageShape.Pie:
@@ -233,16 +211,12 @@ namespace NexusForever.WorldServer.Game.Spell
                 return false;
 
             float angleRadian = (Position.GetAngle(targetPosition) - Rotation.X).CondenseRadianIntoRotationRadian();
-            //float distX = Position.X - targetPosition.X;
-            //float distZ = Position.Z - targetPosition.Z;
-            //float diff = MathF.Sqrt((distX * distX) + (distZ * distZ));
-            //log.Info($"Target is ({angleRadian.NormaliseRadians()}) {angleRadian.ToDegrees()}° from me. ({distX}, {distZ}, {diff}");
 
             float angleDegrees = MathF.Abs(angleRadian.NormaliseRadians().ToDegrees());
             if (angleDegrees > angle / 2f || angleDegrees < -angle / 2f)
             {
                 // Checks for edge radius is skipped if the caster is not a Player. This optimises this method, but also allows for player's to dodge attacks appropriately.
-                if (!(Caster is Player))
+                if (Caster is not Player)
                     return false;
 
                 if (angleDegrees > angle || angleDegrees < -angle)
@@ -258,7 +232,7 @@ namespace NexusForever.WorldServer.Game.Spell
                     }
                     else
                         rightEdge = Position.GetPointForTelegraph(((angle / 2f) * -1f).ToRadians() + Rotation.X + MathF.PI / 2, telegraphRadius);
-                    //Caster.Map.EnqueueAdd(new Simple(16718u), new Vector3(rightEdge.X, Caster.Map.GetTerrainHeight(rightEdge.X, rightEdge.Z), rightEdge.Z));
+
                     if (IsRadiusIntersectingLine(Position, rightEdge, targetPosition, hitRadius))
                         return true;
                 }
@@ -272,7 +246,7 @@ namespace NexusForever.WorldServer.Game.Spell
                     }
                     else
                         leftEdge = Position.GetPointForTelegraph((angle / 2f).ToRadians() + Rotation.X + MathF.PI / 2, telegraphRadius);
-                    //Caster.Map.EnqueueAdd(new Simple(16718u), new Vector3(leftEdge.X, Caster.Map.GetTerrainHeight(leftEdge.X, leftEdge.Z), leftEdge.Z));
+
                     if (IsRadiusIntersectingLine(Position, leftEdge, targetPosition, hitRadius))
                         return true;
                 }
@@ -285,9 +259,6 @@ namespace NexusForever.WorldServer.Game.Spell
 
         #region Math Stuff
 
-        /// <summary>
-        /// Returns a boolean whether a point sits in a horizontal plane of points.
-        /// </summary>
         /// <remarks>
         /// Based on code available in http://www.jeffreythompson.org/collision-detection/poly-circle.php
         /// </remarks>
@@ -318,13 +289,11 @@ namespace NexusForever.WorldServer.Game.Spell
         {
             // go through each of the vertices, plus
             // the next vertex in the list
-            int next = 0;
             for (int current = 0; current < polygon.Length; current++)
             {
-
                 // get next vertex in list
                 // if we've hit the end, wrap around to 0
-                next = current + 1;
+                int next = current + 1;
                 if (next == polygon.Length)
                     next = 0;
 
@@ -335,8 +304,8 @@ namespace NexusForever.WorldServer.Game.Spell
 
                 // check for collision between the circle and
                 // a line formed between the two vertices
-                bool collision = IsRadiusIntersectingLine(vc, vn, position, hitRadius);
-                if (collision) return true;
+                if (IsRadiusIntersectingLine(vc, vn, position, hitRadius))
+                    return true;
             }
 
             return false;
@@ -344,7 +313,6 @@ namespace NexusForever.WorldServer.Game.Spell
 
         private static bool IsRadiusIntersectingLine(Vector3 lineStart, Vector3 lineEnd, Vector3 circleOrigin, float radius)
         {
-
             // is either end INSIDE the circle?
             // if so, return true immediately
             bool inside1 = lineStart.GetDistance(circleOrigin) < radius;
@@ -356,8 +324,7 @@ namespace NexusForever.WorldServer.Game.Spell
 
             // is this point actually on the line segment?
             // if so keep going, but if not, return false
-            bool onSegment = IsPointIntersectingLine(lineStart.X, lineStart.Z, lineEnd.X, lineEnd.Z, closestPoint.X, closestPoint.Y);
-            if (!onSegment)
+            if (!IsPointIntersectingLine(lineStart.X, lineStart.Z, lineEnd.X, lineEnd.Z, closestPoint.X, closestPoint.Y))
                 return false;
 
             // get distance to closest point
@@ -367,9 +334,7 @@ namespace NexusForever.WorldServer.Game.Spell
 
             // is the circle on the line?
             if (distance <= radius)
-            {
                 return true;
-            }
 
             return false;
         }
@@ -410,9 +375,8 @@ namespace NexusForever.WorldServer.Game.Spell
             // note we use the buffer here to give a range, rather
             // than one #
             if (d1 + d2 >= lineLen - buffer && d1 + d2 <= lineLen + buffer)
-            {
                 return true;
-            }
+
             return false;
         }
 
@@ -426,6 +390,7 @@ namespace NexusForever.WorldServer.Game.Spell
 
             return new Vector3(newX, point.Y, newY);
         }
+
         #endregion
     }
 }
