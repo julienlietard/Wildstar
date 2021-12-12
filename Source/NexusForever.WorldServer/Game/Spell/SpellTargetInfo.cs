@@ -2,6 +2,7 @@
 using NexusForever.Shared.GameTable.Model;
 using NexusForever.WorldServer.Game.Entity;
 using NexusForever.WorldServer.Game.Spell.Static;
+using NexusForever.WorldServer.Network.Message.Model.Shared;
 
 namespace NexusForever.WorldServer.Game.Spell
 {
@@ -9,18 +10,6 @@ namespace NexusForever.WorldServer.Game.Spell
     {
         public class SpellTargetEffectInfo
         {
-            public class DamageDescription
-            {
-                public DamageType DamageType { get; set; }
-                public uint RawDamage { get; set; }
-                public uint RawScaledDamage { get; set; }
-                public uint AbsorbedAmount { get; set; }
-                public uint ShieldAbsorbAmount { get; set; }
-                public uint AdjustedDamage { get; set; }
-                public uint OverkillAmount { get; set; }
-                public bool KilledTarget { get; set; }
-            }
-
             public uint EffectId { get; }
             public Spell4EffectsEntry Entry { get; }
             public DamageDescription Damage { get; private set; }

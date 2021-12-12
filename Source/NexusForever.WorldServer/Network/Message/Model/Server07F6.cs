@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using NexusForever.Shared.Network;
 using NexusForever.Shared.Network.Message;
 using NexusForever.WorldServer.Game.Entity;
+using NexusForever.WorldServer.Game.Spell.Static;
+using NexusForever.WorldServer.Network.Message.Model.Shared;
 
 namespace NexusForever.WorldServer.Network.Message.Model
 {
@@ -29,39 +31,6 @@ namespace NexusForever.WorldServer.Network.Message.Model
                 writer.Write(Unknown5);
                 writer.Write(Unknown6);
                 writer.Write(Unknown7, 3u);
-            }
-        }
-
-        public class DamageDescription : IWritable // same used for 0x07F4
-        {
-            public uint RawDamage { get; set; }
-            public uint RawScaledDamage { get; set; }
-            public uint AbsorbedAmount { get; set; }
-            public uint ShieldAbsorbAmount { get; set; }
-            public uint AdjustedDamage { get; set; }
-            public uint OverkillAmount { get; set; }
-            public uint Unknown6 { get; set; }
-            public bool KilledTarget { get; set; }
-            public byte CombatResult { get; set; }
-            public byte DamageType { get; set; }
-
-            public List<UnknownStructure3> unknownStructure3 { get; set; } = new List<UnknownStructure3>();
-
-            public void Write(GamePacketWriter writer)
-            {
-                writer.Write(RawDamage);
-                writer.Write(RawScaledDamage);
-                writer.Write(AbsorbedAmount);
-                writer.Write(ShieldAbsorbAmount);
-                writer.Write(AdjustedDamage);
-                writer.Write(OverkillAmount);
-                writer.Write(Unknown6);
-                writer.Write(KilledTarget);
-                writer.Write(CombatResult, 4u);
-                writer.Write(DamageType, 3u);
-                
-                writer.Write(unknownStructure3.Count, 8u);
-                unknownStructure3.ForEach(u => u.Write(writer));
             }
         }
 

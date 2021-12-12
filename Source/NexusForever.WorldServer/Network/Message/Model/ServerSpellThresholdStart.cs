@@ -1,10 +1,10 @@
-using NexusForever.Shared.Network;
+﻿using NexusForever.Shared.Network;
 using NexusForever.Shared.Network.Message;
 
 namespace NexusForever.WorldServer.Network.Message.Model
 {
-    [Message(GameMessageOpcode.Server0816)]
-    public class Server0816 : IWritable
+    [Message(GameMessageOpcode.ServerSpellThresholdStart)]
+    public class ServerSpellThresholdStart : IWritable
     {
         public uint Spell4Id { get; set; }
         public uint RootSpell4Id { get; set; }
