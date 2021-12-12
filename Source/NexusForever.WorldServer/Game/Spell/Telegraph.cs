@@ -64,6 +64,9 @@ namespace NexusForever.WorldServer.Game.Spell
             Rotation = new Vector3(rotationRadians, Rotation.Y, Rotation.Z);
         }
 
+        /// <summary>
+        /// Returns a <see cref="IEnumerable{T}"/> containing all <see cref="UnitEntity"/> that can be targeted by this <see cref="Telegraph"/>.
+        /// </summary>
         public IEnumerable<UnitEntity> GetTargets(Spell spell)
         {
             Caster.Map.Search(Position, GridSearchSize(), new SearchCheckTelegraph(this, Caster), out List<GridEntity> targets);

@@ -2,10 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NexusForever.Shared;
-using NexusForever.Shared.GameTable;
 using NexusForever.Shared.GameTable.Model;
 using NexusForever.WorldServer.Game.Entity;
-using NexusForever.WorldServer.Game.Entity.Static;
 using NexusForever.WorldServer.Game.Prerequisite;
 using NexusForever.WorldServer.Game.Spell.Event;
 using NexusForever.WorldServer.Game.Spell.Static;
@@ -70,6 +68,7 @@ namespace NexusForever.WorldServer.Game.Spell
 
             events.Update(lastTick);
 
+            // For Threshold Spells, a SpellStatus of Waiting is used to more accurately check state.
             if (status == SpellStatus.Executing && HasThresholdToCast)
                 status = SpellStatus.Waiting;
 
@@ -77,13 +76,17 @@ namespace NexusForever.WorldServer.Game.Spell
             {
                 holdDuration += lastTick;
 
+                // For Charge+Hold Spells, they have a maximum time that can be held before the effect will fire. Execute effect at maximum time.
+                // This will fire the Child spell, and then clean up this spell in the rest of this loop.
                 if (holdDuration >= totalThresholdTimer)
                     HandleThresholdCast();
             }
 
+            // Update all Child Spells that are triggered from Execute thresholds.
             thresholdSpells.ForEach(s => s.Update(lastTick));
             if (status == SpellStatus.Waiting && HasThresholdToCast)
             {
+                // Clean up any finished Child Spells because this Spell cannot finish until it has.
                 foreach (Spell thresholdSpell in thresholdSpells.ToList())
                     if (thresholdSpell.IsFinished)
                         thresholdSpells.Remove(thresholdSpell);
@@ -93,13 +96,12 @@ namespace NexusForever.WorldServer.Game.Spell
                 (status == SpellStatus.Waiting && !HasThresholdToCast) ||
                 status == SpellStatus.Finishing)
             {
-                // spell effects have finished 
                 status = SpellStatus.Finished;
+                // Inform Clients that this Spell has finished casting.
                 SendSpellFinish();
                 log.Trace($"Spell {parameters.SpellInfo.Entry.Id} has finished.");
 
-                parameters.CompleteAction?.Invoke(parameters);
-
+                // Clear any Threshold information sent to the caster.
                 if (caster is Player player)
                     if (thresholdMax > 0)
                     {
@@ -147,7 +149,7 @@ namespace NexusForever.WorldServer.Game.Spell
                 return;
             }
 
-            // TODO: Handle all GlobalCooldownEnums. It looks like it's just a "Type" that the GCD is stored against. Each spell checks the GCD for its type.
+            // Global Cooldowns appear to have a "Type" that the GCD is stored against. Each spell will confirm that the specific GCD "Type" is not on CD.
             if (caster is Player player)
             {
                 if (parameters.SpellInfo.GlobalCooldown != null && !parameters.IsProxy)
@@ -246,6 +248,9 @@ namespace NexusForever.WorldServer.Game.Spell
             return CastResult.Ok;
         }
 
+        /// <summary>
+        /// Returns whether the Caster is in a state where they can ignore Resource or other constraints.
+        /// </summary>
         private bool CheckRunnerOverride(Player player)
         {
             foreach (PrerequisiteEntry runnerPrereq in parameters.SpellInfo.PrerequisiteRunners)
@@ -307,6 +312,9 @@ namespace NexusForever.WorldServer.Game.Spell
             return CastResult.Ok;
         }
 
+        /// <summary>
+        /// Initialises a <see cref="Telegraph"/> per <see cref="TelegraphDamageEntry"/> as associated with this <see cref="Spell"/>.
+        /// </summary>
         private void InitialiseTelegraphs()
         {
             telegraphs.Clear();
@@ -315,6 +323,9 @@ namespace NexusForever.WorldServer.Game.Spell
                 telegraphs.Add(new Telegraph(telegraphDamageEntry, caster, caster.Position, caster.Rotation));
         }
 
+        /// <summary>
+        /// Invoke the method that handles the <see cref="CastMethod"/> for this <see cref="Spell"/>.
+        /// </summary>
         private void InitialiseCastMethod()
         {
             CastMethodDelegate handler = GlobalSpellManager.Instance.GetCastMethodHandler(CastMethod);
@@ -327,6 +338,9 @@ namespace NexusForever.WorldServer.Game.Spell
                 handler.Invoke(this);
         }
 
+        /// <summary>
+        /// Get an initialised <see cref="Spell"/>, as part of a Threshold chain, to be cast as a Child (to this Spell instance) based on the current phase.
+        /// </summary>
         private Spell InitialiseThresholdSpell()
         {
             if (parameters.SpellInfo.Thresholds.Count == 0)
@@ -351,6 +365,10 @@ namespace NexusForever.WorldServer.Game.Spell
             return thresholdSpell;
         }
 
+        /// <summary>
+        /// This is called when Spell is of a type that has Multi-Tap capabilities.
+        /// </summary>
+        /// <remarks>This grabs and executes the next spell in a chain to cast or the appropriate charge+hold spell.</remarks>
         private void HandleThresholdCast()
         {
             if (status != SpellStatus.Waiting)
@@ -431,20 +449,24 @@ namespace NexusForever.WorldServer.Game.Spell
             status = SpellStatus.Executing;
             log.Trace($"Spell {parameters.SpellInfo.Entry.Id} has started executing.");
 
+            // Ensure that at the first point of an Execute pass, we charge the spell
+            // This excludes Charge+Hold Spells, which are cost when the button lets go and is handled by Update().
             if ((currentPhase == 0 || currentPhase == 255) && !HasThresholdToCast && CastMethod != CastMethod.ChargeRelease)
             {
+                // Deduct charges and any resources from the caster
                 CostSpell();
+                // Apply Cooldown for this spell. This is separate from Global CD.
                 SetCooldown();
             }
 
+            // Clear Effects so that we don't duplicate Effect information back to the client.
             targets.ForEach(t => t.Effects.Clear());
 
-            SelectTargets();
-
-            ExecuteEffects();
-            HandleProxies();
-
-            SendSpellGo();
+            // Order below must not change.
+            SelectTargets();  // First Select Targets
+            ExecuteEffects(); // All Effects are evaluated and executed (after SelectTargets())
+            HandleProxies();  // Any Proxies that are added by Effets are evaluated and executed (after ExecuteEffects())
+            SendSpellGo();    // Inform the Client once all evaluations are taken place (after Effects & Proxies are executed)
 
             // TODO: Confirm whether RapidTap spells cancel another out, and add logic as necessary
 
@@ -485,10 +507,13 @@ namespace NexusForever.WorldServer.Game.Spell
         List<uint> uniqueTargets = new();
         private void SelectTargets()
         {
+            // We clear targets every time this is called for this spell so we don't have duplicate targets.
             targets.Clear();
 
+            // Add Caster Entity with the appropriate SpellEffectTargetFlags.
             targets.Add(new SpellTargetInfo(SpellEffectTargetFlags.Caster, caster));
 
+            // Add Targeted Entity with the appropriate SpellEffectTargetFlags.
             if (parameters.PrimaryTargetId > 0)
             {
                 UnitEntity primaryTargetEntity = caster.GetVisible<UnitEntity>(parameters.PrimaryTargetId);
@@ -496,6 +521,9 @@ namespace NexusForever.WorldServer.Game.Spell
                     targets.Add(new SpellTargetInfo((SpellEffectTargetFlags.Target), primaryTargetEntity));
             }
 
+            // Re-initiailise Telegraphs at Execute time, so that position and rotation is calculated appropriately.
+            // This is optimised to only happen on player-cast spells.
+            // TODO: Add support for this for Server Controlled entities. It is presumed most will stand still when casting.
             if (caster is Player)
                 InitialiseTelegraphs();
 
@@ -503,6 +531,7 @@ namespace NexusForever.WorldServer.Game.Spell
             {
                 List<uint> targetGuids = new();
 
+                // Ensure only telegraphs that apply to this Execute phase are evaluated.
                 if (CastMethod == CastMethod.Multiphase && currentPhase < 255)
                 {
                     int phaseMask = 1 << currentPhase;
@@ -514,14 +543,17 @@ namespace NexusForever.WorldServer.Game.Spell
 
                 foreach (UnitEntity entity in telegraph.GetTargets(this))
                 {
+                    // Ensure that we're not exceeding the amount of targets we can select
                     if (parameters.SpellInfo.AoeTargetConstraints != null &&
                         parameters.SpellInfo.AoeTargetConstraints.TargetCount > 0u &&
                         targets.Count > parameters.SpellInfo.AoeTargetConstraints.TargetCount)
                         break;
 
+                    // Ensure that this Telegraph hasn't already selected this entity
                     if (targetGuids.Contains(entity.Guid))
                         continue;
 
+                    // Ensure that this telegraph doesn't select an entity that has already been slected by another telegraph, as the targeting flags dictate.
                     if ((parameters.SpellInfo.BaseInfo.Entry.TargetingFlags & 32) != 0 &&
                         uniqueTargets.Contains(entity.Guid))
                         continue;
@@ -537,7 +569,6 @@ namespace NexusForever.WorldServer.Game.Spell
 
         private void ExecuteEffects()
         {
-            // Using For..Loop instead of foreach intentionally, as this can be modified as effects are evaluated.
             for (int index = 0; index < parameters.SpellInfo.Effects.Count(); index++)
             {
                 Spell4EffectsEntry spell4EffectsEntry = parameters.SpellInfo.Effects[index];
@@ -549,6 +580,7 @@ namespace NexusForever.WorldServer.Game.Spell
                         continue;
                 }
 
+                // Ensure that Effects fire in this spell phase.
                 if (CastMethod == CastMethod.Multiphase && currentPhase < 255)
                 {
                     int phaseMask = 1 << currentPhase;
@@ -580,6 +612,8 @@ namespace NexusForever.WorldServer.Game.Spell
                         // TODO: if there is an unhandled exception in the handler, there will be an infinite loop on Execute()
                         handler.Invoke(this, effectTarget.Entity, info);
 
+                        // Track the number of times this effect has fired.
+                        // Some spell effects have a limited trigger count per spell cast.
                         if (effectTriggerCount.TryGetValue(spell4EffectsEntry.Id, out uint count))
                             effectTriggerCount[spell4EffectsEntry.Id]++;
                         else
@@ -633,24 +667,6 @@ namespace NexusForever.WorldServer.Game.Spell
         {
             // TODO: implement correctly
             return parameters.UserInitiatedSpellCast && parameters.SpellInfo.BaseInfo.SpellType.Id != 5 && parameters.SpellInfo.Entry.CastTime > 0;
-        }
-
-        /// <summary>
-        /// Returns if the Caster is able to use this Spell Effect with their current Psi Points.
-        /// </summary>
-        /// <returns>True if Esper Caster can use Effect</returns>
-        /// <remarks>It is assumed that this will not be called unless this Spell is a Psi Point spender.</remarks>
-        private bool CanUseEsperEffect(Spell4EffectsEntry entry, uint currentEmm)
-        {
-            switch (entry.EmmComparison)
-            {
-                case 0:
-                    return currentEmm == entry.EmmValue;
-                case 1:
-                    return currentEmm >= entry.EmmValue;
-                default:
-                    return true;
-            }
         }
 
         /// <summary>
@@ -869,18 +885,6 @@ namespace NexusForever.WorldServer.Game.Spell
             caster.EnqueueToVisible(serverSpellGo, true);
         }
 
-        private void SendRemoveBuff(uint unitId)
-        {
-            if (!parameters.SpellInfo.BaseInfo.HasIcon)
-                throw new InvalidOperationException();
-
-            caster.EnqueueToVisible(new ServerSpellBuffRemove
-            {
-                CastingId = CastingId,
-                CasterId = unitId
-            }, true);
-        }
-
         private void SendThresholdStart()
         {
             if (caster is Player player)
@@ -901,6 +905,18 @@ namespace NexusForever.WorldServer.Game.Spell
                     Spell4Id = parameters.ParentSpellInfo?.Entry.Id ?? Spell4Id,
                     Value = parameters.ThresholdValue > 0 ? (byte)parameters.ThresholdValue : (byte)thresholdValue
                 });
+        }
+
+        private void SendRemoveBuff(uint unitId)
+        {
+            if (!parameters.SpellInfo.BaseInfo.HasIcon)
+                throw new InvalidOperationException();
+
+            caster.EnqueueToVisible(new ServerSpellBuffRemove
+            {
+                CastingId = CastingId,
+                CasterId = unitId
+            }, true);
         }
 
         private void SendBuffRemoved()
