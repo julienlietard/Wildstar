@@ -141,5 +141,38 @@ namespace NexusForever.WorldServer.Game.Entity
             Spell.Spell spell = pendingSpells.SingleOrDefault(s => s.CastingId == castingId);
             spell?.CancelCast(CastResult.SpellCancelled);
         }
+
+        /// <summary>
+        /// Checks if this <see cref="UnitEntity"/> is currently casting a spell.
+        /// </summary>
+        /// <returns></returns>
+        public bool IsCasting()
+        {
+            foreach (Spell.Spell spell in pendingSpells)
+                if (spell.IsCasting)
+                    return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Check if this <see cref="UnitEntity"/> has a spell active with the provided <see cref="Spell4Entry"/> Id
+        /// </summary>
+        public bool HasSpell(uint spell4Id, out Spell.Spell spell, bool isCasting = false)
+        {
+            spell = pendingSpells.FirstOrDefault(i => i.IsCasting == isCasting && !i.IsFinished && i.Spell4Id == spell4Id);
+
+            return spell != null;
+        }
+
+        /// <summary>
+        /// Check if this <see cref="UnitEntity"/> has a spell active with the provided <see cref="CastMethod"/>
+        /// </summary>
+        public bool HasSpell(CastMethod castMethod, out Spell.Spell spell)
+        {
+            spell = pendingSpells.FirstOrDefault(i => !i.IsCasting && !i.IsFinished && i.CastMethod == castMethod);
+
+            return spell != null;
+        }
     }
 }
