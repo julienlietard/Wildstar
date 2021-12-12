@@ -9,6 +9,7 @@ using NexusForever.Shared;
 using NexusForever.Shared.GameTable;
 using NexusForever.Shared.GameTable.Model;
 using NexusForever.WorldServer.Game.Entity;
+using NexusForever.WorldServer.Game.Entity.Static;
 using NexusForever.WorldServer.Game.Spell.Static;
 using NLog;
 
@@ -32,12 +33,15 @@ namespace NexusForever.WorldServer.Game.Spell
         private uint nextEffectId = 1;
 
         private readonly Dictionary<uint, SpellBaseInfo> spellBaseInfoStore = new();
-        private readonly Dictionary<SpellEffectType, SpellEffectDelegate> spellEffectDelegates =  new();
+        private readonly Dictionary<SpellEffectType, SpellEffectDelegate> spellEffectDelegates = new();
+        private readonly Dictionary<CastMethod, CastMethodDelegate> castMethodDelegates = new();
 
         // entry caches
         private ImmutableDictionary<uint, ImmutableList<Spell4Entry>> spellEntries;
         private ImmutableDictionary<uint, ImmutableList<Spell4EffectsEntry>> spellEffectEntries;
         private ImmutableDictionary<uint, ImmutableList<TelegraphDamageEntry>> spellTelegraphEntries;
+        private ImmutableDictionary<uint, ImmutableList<Spell4ThresholdsEntry>> spellThresholdEntries;
+        private ImmutableDictionary<uint, ImmutableList<SpellPhaseEntry>> spellPhaseEntries;
 
         private GlobalSpellManager()
         {
@@ -48,6 +52,7 @@ namespace NexusForever.WorldServer.Game.Spell
             CacheSpellEntries();
             InitialiseSpellInfo();
             InitialiseSpellEffectHandlers();
+            InitialiseCastMethodHandlers();
         }
 
         private void CacheSpellEntries()
@@ -70,6 +75,18 @@ namespace NexusForever.WorldServer.Game.Spell
                 .ToImmutableDictionary(g => g.Key, g => g
                     .Select(e => GameTableManager.Instance.TelegraphDamage.GetEntry(e.TelegraphDamageId))
                     .ToImmutableList());
+
+            spellThresholdEntries = GameTableManager.Instance.Spell4Thresholds.Entries
+                .GroupBy(e => e.Spell4IdParent)
+                .ToImmutableDictionary(g => g.Key, g => g
+                    .OrderBy(e => e.OrderIndex)
+                    .ToImmutableList());
+
+            spellPhaseEntries = GameTableManager.Instance.SpellPhase.Entries
+                .GroupBy(e => e.Spell4IdOwner)
+                .ToImmutableDictionary(g => g.Key, g => g
+                    .OrderBy(e => e.OrderIndex)
+                    .ToImmutableList());
         }
 
         private void InitialiseSpellInfo()
@@ -79,6 +96,9 @@ namespace NexusForever.WorldServer.Game.Spell
 
             foreach (Spell4BaseEntry entry in GameTableManager.Instance.Spell4Base.Entries)
                 spellBaseInfoStore.Add(entry.Id, new SpellBaseInfo(entry));
+
+            foreach (SpellBaseInfo spellBaseInfo in spellBaseInfoStore.Values)
+                spellBaseInfo.Intitialise();
 
             log.Info($"Cached {spellBaseInfoStore.Count} spells in {sw.ElapsedMilliseconds}ms.");
         }
@@ -93,7 +113,7 @@ namespace NexusForever.WorldServer.Game.Spell
                 if (attribute == null)
                     continue;
 
-                ParameterExpression spellParameter  = Expression.Parameter(typeof(Spell));
+                ParameterExpression spellParameter = Expression.Parameter(typeof(Spell));
                 ParameterExpression targetParameter = Expression.Parameter(typeof(UnitEntity));
                 ParameterExpression effectParameter = Expression.Parameter(typeof(SpellTargetInfo.SpellTargetEffectInfo));
 
@@ -103,6 +123,30 @@ namespace NexusForever.WorldServer.Game.Spell
                     Expression.Lambda<SpellEffectDelegate>(call, spellParameter, targetParameter, effectParameter);
 
                 spellEffectDelegates.Add(attribute.SpellEffectType, lambda.Compile());
+            }
+        }
+
+        private void InitialiseCastMethodHandlers()
+        {
+            foreach (MethodInfo method in Assembly.GetExecutingAssembly()
+                .GetTypes()
+                .SelectMany(t => t.GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)))
+            {
+                List<CastMethodHandlerAttribute> attributes = method.GetCustomAttributes<CastMethodHandlerAttribute>().ToList();
+                if (attributes.Count() == 0)
+                    continue;
+
+                foreach (CastMethodHandlerAttribute attribute in attributes)
+                {
+                    ParameterExpression spellParameter = Expression.Parameter(typeof(Spell));
+
+                    MethodCallExpression call = Expression.Call(spellParameter, method);
+
+                    Expression<CastMethodDelegate> lambda =
+                        Expression.Lambda<CastMethodDelegate>(call, spellParameter);
+
+                    castMethodDelegates.Add(attribute.CastMethod, lambda.Compile());
+                }
             }
         }
 
@@ -143,6 +187,30 @@ namespace NexusForever.WorldServer.Game.Spell
         }
 
         /// <summary>
+        /// Return all <see cref="Spell4ThresholdsEntry"/>'s for the supplied spell id.
+        /// </summary>
+        /// <remarks>
+        /// This should only be used for cache related code, if you want an overview of a spell use <see cref="SpellBaseInfo"/>.
+        /// </remarks>
+        public IEnumerable<Spell4ThresholdsEntry> GetSpell4ThresholdEntries(uint spell4Id)
+        {
+            return spellThresholdEntries.TryGetValue(spell4Id, out ImmutableList<Spell4ThresholdsEntry> entries)
+                ? entries : Enumerable.Empty<Spell4ThresholdsEntry>();
+        }
+
+        /// <summary>
+        /// Return all <see cref="SpellPhaseEntry"/>'s for the supplied spell id.
+        /// </summary>
+        /// <remarks>
+        /// This should only be used for cache related code, if you want an overview of a spell use <see cref="SpellBaseInfo"/>.
+        /// </remarks>
+        public IEnumerable<SpellPhaseEntry> GetSpellPhaseEntries(uint spell4Id)
+        {
+            return spellPhaseEntries.TryGetValue(spell4Id, out ImmutableList<SpellPhaseEntry> entries)
+                ? entries : Enumerable.Empty<SpellPhaseEntry>();
+        }
+
+        /// <summary>
         /// Return <see cref="SpellBaseInfo"/>, if not already cached it will be generated before being returned.
         /// </summary>
         public SpellBaseInfo GetSpellBaseInfo(uint spell4BaseId)
@@ -156,7 +224,7 @@ namespace NexusForever.WorldServer.Game.Spell
                 spellBaseInfo = new SpellBaseInfo(spell4BaseEntry);
                 spellBaseInfoStore.Add(spell4BaseId, spellBaseInfo);
             }
-            
+
             return spellBaseInfo;
         }
 
@@ -166,6 +234,14 @@ namespace NexusForever.WorldServer.Game.Spell
         public SpellEffectDelegate GetEffectHandler(SpellEffectType spellEffectType)
         {
             return spellEffectDelegates.TryGetValue(spellEffectType, out SpellEffectDelegate handler) ? handler : null;
+        }
+
+        /// <summary>
+        /// Return <see cref="CastMethodDelegate"/> for supplied <see cref="SpellEffectType"/>.
+        /// </summary>
+        public CastMethodDelegate GetCastMethodHandler(CastMethod castMethod)
+        {
+            return castMethodDelegates.TryGetValue(castMethod, out CastMethodDelegate handler) ? handler : null;
         }
     }
 }
