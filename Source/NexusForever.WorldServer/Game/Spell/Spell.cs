@@ -521,49 +521,74 @@ namespace NexusForever.WorldServer.Game.Spell
                     targets.Add(new SpellTargetInfo((SpellEffectTargetFlags.Target), primaryTargetEntity));
             }
 
+            // Targeting First Pass: Do Basic Checks to get targets for spell as needed, nearby.
+            targets.AddRange(new AoeSelection(caster, parameters));
+
             // Re-initiailise Telegraphs at Execute time, so that position and rotation is calculated appropriately.
             // This is optimised to only happen on player-cast spells.
             // TODO: Add support for this for Server Controlled entities. It is presumed most will stand still when casting.
             if (caster is Player)
                 InitialiseTelegraphs();
 
-            foreach (Telegraph telegraph in telegraphs)
+            if (telegraphs.Count > 0)
             {
-                List<uint> targetGuids = new();
 
-                // Ensure only telegraphs that apply to this Execute phase are evaluated.
-                if (CastMethod == CastMethod.Multiphase && currentPhase < 255)
+                List<SpellTargetInfo> allowedTargets = new();
+                foreach (Telegraph telegraph in telegraphs)
                 {
-                    int phaseMask = 1 << currentPhase;
-                    if (telegraph.TelegraphDamage.PhaseFlags != 1 && (phaseMask & telegraph.TelegraphDamage.PhaseFlags) == 0)
-                        continue;
+                    List<uint> targetGuids = new();
+
+                    // Ensure only telegraphs that apply to this Execute phase are evaluated.
+                    if (CastMethod == CastMethod.Multiphase && currentPhase < 255)
+                    {
+                        int phaseMask = 1 << currentPhase;
+                        if (telegraph.TelegraphDamage.PhaseFlags != 1 && (phaseMask & telegraph.TelegraphDamage.PhaseFlags) == 0)
+                            continue;
+                    }
+
+                    log.Trace($"Getting targets for Telegraph ID {telegraph.TelegraphDamage.Id}");
+
+                    foreach (var target in telegraph.GetTargets(this, targets))
+                    {
+                        // Ensure that this Telegraph hasn't already selected this entity
+                        if (targetGuids.Contains(target.Entity.Guid))
+                            continue;
+
+                        // Ensure that this telegraph doesn't select an entity that has already been slected by another telegraph, as the targeting flags dictate.
+                        if ((parameters.SpellInfo.BaseInfo.Entry.TargetingFlags & 32) != 0 &&
+                            uniqueTargets.Contains(target.Entity.Guid))
+                            continue;
+
+                        allowedTargets.Add(target);
+                        targetGuids.Add(target.Entity.Guid);
+                        uniqueTargets.Add(target.Entity.Guid);
+                    }
+
+                    log.Trace($"Got {targets.Count} for Telegraph ID {telegraph.TelegraphDamage.Id}");
                 }
+                targets.RemoveAll(x => x.Flags == SpellEffectTargetFlags.Telegraph); // Only remove targets that are ONLY Telegraph Targeted
+                targets.AddRange(allowedTargets);
+            }
 
-                log.Trace($"Getting targets for Telegraph ID {telegraph.TelegraphDamage.Id}");
-
-                foreach (UnitEntity entity in telegraph.GetTargets(this))
+            if (parameters.SpellInfo.AoeTargetConstraints != null)
+            {
+                List<SpellTargetInfo> finalAoeTargets = new();
+                foreach (var target in targets)
                 {
                     // Ensure that we're not exceeding the amount of targets we can select
-                    if (parameters.SpellInfo.AoeTargetConstraints != null &&
-                        parameters.SpellInfo.AoeTargetConstraints.TargetCount > 0u &&
-                        targets.Count > parameters.SpellInfo.AoeTargetConstraints.TargetCount)
+                    if (parameters.SpellInfo.AoeTargetConstraints.TargetCount > 0 &&
+                        finalAoeTargets.Count > parameters.SpellInfo.AoeTargetConstraints.TargetCount)
                         break;
 
-                    // Ensure that this Telegraph hasn't already selected this entity
-                    if (targetGuids.Contains(entity.Guid))
+                    if ((target.Flags & SpellEffectTargetFlags.Telegraph) == 0)
                         continue;
 
-                    // Ensure that this telegraph doesn't select an entity that has already been slected by another telegraph, as the targeting flags dictate.
-                    if ((parameters.SpellInfo.BaseInfo.Entry.TargetingFlags & 32) != 0 &&
-                        uniqueTargets.Contains(entity.Guid))
-                        continue;
-
-                    targets.Add(new SpellTargetInfo(SpellEffectTargetFlags.Telegraph, entity));
-                    targetGuids.Add(entity.Guid);
-                    uniqueTargets.Add(entity.Guid);
+                    finalAoeTargets.Add(target);
                 }
 
-                log.Trace($"Got {targets.Count} for Telegraph ID {telegraph.TelegraphDamage.Id}");
+                // Finalise targets for effect execution
+                targets.RemoveAll(x => x.Flags == SpellEffectTargetFlags.Telegraph); // Only remove targets that are ONLY Telegraph Targeted
+                targets.AddRange(finalAoeTargets);
             }
         }
 
