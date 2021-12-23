@@ -4,6 +4,10 @@ using NexusForever.Shared.GameTable.Model;
 using NexusForever.WorldServer.Game.Entity.Network;
 using NexusForever.WorldServer.Game.Entity.Network.Model;
 using NexusForever.WorldServer.Game.Entity.Static;
+using NexusForever.WorldServer.Game.Map;
+using System;
+using System.Linq;
+using System.Numerics;
 
 namespace NexusForever.WorldServer.Game.Entity
 {
@@ -11,16 +15,47 @@ namespace NexusForever.WorldServer.Game.Entity
     public class Simple : UnitEntity
     {
         public byte QuestChecklistIdx { get; private set; }
+        public Action<Simple> afterAddToMap;
 
         public Simple()
             : base(EntityType.Simple)
         {
         }
 
+        public Simple(uint creatureId, Action<Simple> actionAfterAddToMap = null)
+            : base(EntityType.Simple)
+        {
+            Creature2Entry entry = GameTableManager.Instance.Creature2.GetEntry(creatureId);
+            if (entry == null)
+                throw new ArgumentNullException();
+
+            CreatureId = creatureId;
+            afterAddToMap = actionAfterAddToMap;
+
+            SetProperty(Property.BaseHealth, 101.0f);
+
+            SetStat(Stat.Health, 101u);
+            SetStat(Stat.Level, 1u);
+
+            Creature2DisplayGroupEntryEntry displayGroupEntry = GameTableManager.Instance.
+                Creature2DisplayGroupEntry.
+                Entries.
+                FirstOrDefault(d => d.Creature2DisplayGroupId == entry.Creature2DisplayGroupId);
+            if (displayGroupEntry != null)
+                DisplayInfo = displayGroupEntry.Creature2DisplayInfoId;
+        }
+
         public override void Initialise(EntityModel model)
         {
             base.Initialise(model);
             QuestChecklistIdx = model.QuestChecklistIdx;
+        }
+
+        public override void OnAddToMap(BaseMap map, uint guid, Vector3 vector)
+        {
+            base.OnAddToMap(map, guid, vector);
+
+            afterAddToMap?.Invoke(this);
         }
 
         protected override IEntityModel BuildEntityModel()
