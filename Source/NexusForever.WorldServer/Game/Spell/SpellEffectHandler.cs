@@ -5,6 +5,7 @@ using NexusForever.Shared.GameTable;
 using NexusForever.Shared.GameTable.Model;
 using NexusForever.WorldServer.Game.Entity;
 using NexusForever.WorldServer.Game.Entity.Static;
+using NexusForever.WorldServer.Game.Housing;
 using NexusForever.WorldServer.Game.Map;
 using NexusForever.WorldServer.Game.Spell.Static;
 using NexusForever.WorldServer.Network.Message.Model;
@@ -91,13 +92,33 @@ namespace NexusForever.WorldServer.Game.Spell
         [SpellEffectHandler(SpellEffectType.Teleport)]
         private void HandleEffectTeleport(UnitEntity target, SpellTargetInfo.SpellTargetEffectInfo info)
         {
+            if (!(target is Player player))
+                return;
+            
             WorldLocation2Entry locationEntry = GameTableManager.Instance.WorldLocation2.GetEntry(info.Entry.DataBits00);
             if (locationEntry == null)
                 return;
+                
+            // Handle Housing Teleport
+            if (locationEntry.WorldId == 1229)
+            {
+                Residence residence = GlobalResidenceManager.Instance.GetResidenceByOwner(player.Name);
+                if (residence == null)
+                    residence = GlobalResidenceManager.Instance.CreateResidence(player);
 
-            if (target is Player player)
+                ResidenceEntrance entrance = GlobalResidenceManager.Instance.GetResidenceEntrance(residence.PropertyInfoId);
                 if (player.CanTeleport())
-                    player.TeleportTo((ushort)locationEntry.WorldId, locationEntry.Position0, locationEntry.Position1, locationEntry.Position2);
+                {
+                    player.Rotation = entrance.Rotation.ToEulerDegrees();
+                    player.TeleportTo(entrance.Entry, entrance.Position, residence.Parent?.Id ?? residence.Id);
+                    return;
+                }
+            }
+
+            if (player.CanTeleport()) {
+                player.Rotation = new Quaternion(locationEntry.Facing0, locationEntry.Facing1, locationEntry.Facing2, locationEntry.Facing3).ToEulerDegrees();
+                player.TeleportTo((ushort)locationEntry.WorldId, locationEntry.Position0, locationEntry.Position1, locationEntry.Position2);
+            }
         }
 
         [SpellEffectHandler(SpellEffectType.FullScreenEffect)]
@@ -214,6 +235,12 @@ namespace NexusForever.WorldServer.Game.Spell
         [SpellEffectHandler(SpellEffectType.Fluff)]
         private void HandleEffectFluff(UnitEntity target, SpellTargetInfo.SpellTargetEffectInfo info)
         {
+        }
+
+        [SpellEffectHandler(SpellEffectType.Activate)]
+        private void HandleEffectActivate(UnitEntity target, SpellTargetInfo.SpellTargetEffectInfo info)
+        {
+            parameters.ClientSideInteraction?.HandleSuccess(parameters);
         }
     }
 }

@@ -49,6 +49,7 @@ namespace NexusForever.WorldServer.Game.Entity
             foreach (Spell.Spell spell in pendingSpells.ToArray())
             {
                 spell.Update(lastTick);
+                spell.LateUpdate(lastTick);
                 if (spell.IsFinished)
                     pendingSpells.Remove(spell);
             }
@@ -117,8 +118,18 @@ namespace NexusForever.WorldServer.Game.Entity
                     player.Dismount();
             }
 
-            var spell = new Spell.Spell(this, parameters);
-            spell.Cast();
+            CastMethod castMethod = (CastMethod)parameters.SpellInfo.BaseInfo.Entry.CastMethod;
+            if (parameters.ClientSideInteraction != null)
+                castMethod = CastMethod.ClientSideInteraction;
+
+            var spell = GlobalSpellManager.Instance.NewSpell(castMethod, this, parameters);
+            if (!spell.Cast())
+                return;
+
+            // Don't store spell if it failed to initialise
+            if (spell.IsFailed)
+                return;
+
             pendingSpells.Add(spell);
         }
 
@@ -171,6 +182,16 @@ namespace NexusForever.WorldServer.Game.Entity
         public bool HasSpell(CastMethod castMethod, out Spell.Spell spell)
         {
             spell = pendingSpells.FirstOrDefault(i => !i.IsCasting && !i.IsFinished && i.CastMethod == castMethod);
+
+            return spell != null;
+        }
+
+        /// <summary>
+        /// Check if this <see cref="UnitEntity"/> has a spell active with the provided <see cref="Func"/> predicate.
+        /// </summary>
+        public bool HasSpell(Func<Spell.Spell, bool> predicate, out Spell.Spell spell)
+        {
+            spell = pendingSpells.FirstOrDefault(predicate);
 
             return spell != null;
         }

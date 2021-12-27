@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using NexusForever.Shared.Network;
 using NexusForever.Shared.Network.Message;
 using NexusForever.WorldServer.Game.Entity;
@@ -6,25 +6,26 @@ using NexusForever.WorldServer.Network.Message.Model.Shared;
 
 namespace NexusForever.WorldServer.Network.Message.Model
 {
-    [Message(GameMessageOpcode.Server07FD)]
-    public class Server07FD : IWritable
+    // Used by CastMethod: 5
+    [Message(GameMessageOpcode.ServerSpellStartClientInteraction)]
+    public class ServerSpellStartClientInteraction : IWritable
     {
-        public uint Time { get; set; }
+        public uint ClientUniqueId { get; set; }
         public uint CastingId { get; set; }
         public uint CasterId { get; set; }
         public Position Position { get; set; } = new Position();
-        public uint Unknown16 { get; set; }
+        public uint Yaw { get; set; }
 
         public List<InitialPosition> InitialPositionData { get; set; } = new List<InitialPosition>();
         public List<TelegraphPosition> TelegraphPositionData { get; set; } = new List<TelegraphPosition>();
 
         public void Write(GamePacketWriter writer)
         {
-            writer.Write(Time);
+            writer.Write(ClientUniqueId);
             writer.Write(CastingId);
             writer.Write(CasterId);
             Position.Write(writer);
-            writer.Write(Unknown16);
+            writer.Write(Yaw);
 
             writer.Write(InitialPositionData.Count, 8u);
             InitialPositionData.ForEach(u => u.Write(writer));

@@ -74,7 +74,7 @@ namespace NexusForever.WorldServer.Game.Entity
                 activator.DatacubeManager.AddDatacube((ushort)entry.DatacubeId, int.MaxValue);
         }
 
-        public override void OnActivateCast(Player activator)
+        public override void OnActivateCast(Player activator, uint interactionId)
         {
             uint progress = (uint)(1 << QuestChecklistIdx);
 

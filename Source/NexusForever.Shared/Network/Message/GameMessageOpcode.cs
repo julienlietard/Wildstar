@@ -10,6 +10,7 @@ namespace NexusForever.Shared.Network.Message
         ServerAuthEncrypted             = 0x0076,
         ServerLogoutUpdate              = 0x0092,
         ClientActivateUnitCast          = 0x0097, // not sure about the name - almost the same as 0x00B3, but also initiates 0x07FD
+        ClientActivateUnitInteraction   = 0x0098,
         ClientCastSpell                 = 0x009A,
         ServerChangeWorld               = 0x00AD,
         ServerAchievementInit           = 0x00AE,
@@ -284,12 +285,13 @@ namespace NexusForever.Shared.Network.Message
         Server07FA                      = 0x07FA, // spell related
         Server07FB                      = 0x07FB, // spell miss info?
         ServerSpellCastResult           = 0x07FC,
-        Server07FD                      = 0x07FD, // spell related
+        ServerSpellStartClientInteraction = 0x07FD,
         ServerSpellFinish               = 0x07FE,
         ServerSpellStart                = 0x07FF,
         ClientSpellStopCast             = 0x0801,
         ClientCancelEffect              = 0x0802,
         ServerCooldown                  = 0x0804,
+        ClientInteractionResult         = 0x0805,
         ServerSpellBuffsApply           = 0x0810,
         ServerSpellBuffsRemoved         = 0x0811,
         ServerSpellBuffRemove           = 0x0813,

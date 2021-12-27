@@ -3,13 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using NexusForever.Database.World.Model;
+using NexusForever.Shared.GameTable;
+using NexusForever.Shared.GameTable.Model;
 using NexusForever.Shared.Network.Message;
+using NexusForever.WorldServer.Game.CSI;
 using NexusForever.WorldServer.Game.Entity.Movement;
 using NexusForever.WorldServer.Game.Entity.Network;
 using NexusForever.WorldServer.Game.Entity.Static;
 using NexusForever.WorldServer.Game.Map;
+using NexusForever.WorldServer.Game.Prerequisite;
+using NexusForever.WorldServer.Game.Quest.Static;
 using NexusForever.WorldServer.Game.Reputation;
 using NexusForever.WorldServer.Game.Reputation.Static;
+using NexusForever.WorldServer.Game.Spell;
 using NexusForever.WorldServer.Network.Message.Model;
 using NexusForever.WorldServer.Network.Message.Model.Shared;
 
@@ -72,6 +78,11 @@ namespace NexusForever.WorldServer.Game.Entity
         /// Guid of the <see cref="Player"/> currently controlling this <see cref="WorldEntity"/>.
         /// </summary>
         public uint ControllerGuid { get; set; }
+
+        /// <summary>
+        /// This is for scripts (or database entities) to use to replace the default activation spell ID.
+        /// </summary>
+        public uint ActivateSpell4Id { get; set; } = 0u;
 
         protected readonly Dictionary<Stat, StatValue> stats = new();
 
@@ -176,9 +187,58 @@ namespace NexusForever.WorldServer.Game.Entity
         /// <summary>
         /// Invoked when <see cref="WorldEntity"/> is cast activated.
         /// </summary>
-        public virtual void OnActivateCast(Player activator)
+        public virtual void OnActivateCast(Player activator, uint interactionId)
         {
-            // deliberately empty
+            // Handle CSI
+            Creature2Entry entry = GameTableManager.Instance.Creature2.GetEntry(CreatureId);
+
+            uint spell4Id = 0;
+            for (int i = 0; i < entry.Spell4IdActivate.Length; i++)
+            {
+                if (spell4Id > 0u || i == entry.Spell4IdActivate.Length)
+                    break;
+
+                if (entry.PrerequisiteIdActivateSpells[i] > 0 && PrerequisiteManager.Instance.Meets(activator, entry.PrerequisiteIdActivateSpells[i]))
+                    spell4Id = entry.Spell4IdActivate[i];
+
+                if (spell4Id == 0u && entry.Spell4IdActivate[i] == 0u && i > 0)
+                    spell4Id = entry.Spell4IdActivate[i - 1];
+            }
+
+            if (ActivateSpell4Id != 0)
+                spell4Id = ActivateSpell4Id;
+
+            if (spell4Id == 0)
+                throw new InvalidOperationException($"Spell4Id should not be 0. Unhandled Creature ActivateCast {CreatureId}");
+
+            SpellParameters parameters = new SpellParameters
+            {
+                PrimaryTargetId = Guid,
+                ClientSideInteraction = new ClientSideInteraction(activator, this, interactionId),
+                CastTimeOverride = (int)entry.ActivateSpellCastTime,
+                UserInitiatedSpellCast = true
+            };
+            activator.CastSpell(spell4Id, parameters);
+        }
+
+        /// <summary>
+        /// Invoked when <see cref="WorldEntity"/>'s activate succeeds.
+        /// </summary>
+        public virtual void OnActivateSuccess(Player activator)
+        {
+            activator.QuestManager.ObjectiveUpdate(QuestObjectiveType.ActivateEntity, CreatureId, 1u);
+            foreach (uint targetGroupId in AssetManager.Instance.GetTargetGroupsForCreatureId(CreatureId) ?? Enumerable.Empty<uint>())
+                activator.QuestManager.ObjectiveUpdate(QuestObjectiveType.ActivateTargetGroup, targetGroupId, 1u); // Updates the objective, but seems to disable all the other targets. TODO: Investigate
+            
+            // TODO: Fire Scripts
+        }
+
+        /// <summary>
+        /// Invoked when <see cref="WorldEntity"/>'s activation fails.
+        /// </summary>
+        public virtual void OnActivateFail(Player activator)
+        {
+            // TODO: Fire Scripts
         }
 
         protected void SetProperty(Property property, float value, float baseValue = 0.0f)

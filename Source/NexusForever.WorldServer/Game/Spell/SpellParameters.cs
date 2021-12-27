@@ -1,4 +1,5 @@
-﻿using NexusForever.WorldServer.Game.Entity;
+﻿using NexusForever.WorldServer.Game.CSI;
+using NexusForever.WorldServer.Game.Entity;
 using System;
 
 namespace NexusForever.WorldServer.Game.Spell
@@ -17,6 +18,7 @@ namespace NexusForever.WorldServer.Game.Spell
         public uint ThresholdValue { get; set; }
         public bool IsProxy { get; set; }
         public bool ForceCancelOnly { get; set; }
+        public ClientSideInteraction ClientSideInteraction { get; set; }
         public Action<SpellParameters> CompleteAction { get; set; }
         public int CastTimeOverride { get; set; } = -1;
         public double CooldownOverride { get; set; } = 0d;
